@@ -1,21 +1,44 @@
 import svgwrite
 from .types import Region, Label
 
-def polygon_to_svg_path(poly):
-    """Convert a Shapely Polygon to an SVG path string."""
-    coords = list(poly.exterior.coords)
-    if not coords:
-        return ""
+def polygon_to_svg_path(geom):
+    """Convert a Shapely Polygon or MultiPolygon to an SVG path string."""
 
-    path_parts = [f"M {coords[0][0]} {coords[0][1]}"]
-    for x, y in coords[1:]:
-        path_parts.append(f"L {x} {y}")
-    path_parts.append("Z")
+    def single_polygon_to_path(poly):
+        """Convert a single polygon (with potential holes) to SVG path."""
+        path_parts = []
 
-    return " ".join(path_parts)
+        # Exterior ring
+        coords = list(poly.exterior.coords)
+        if coords:
+            path_parts.append(f"M {coords[0][0]} {coords[0][1]}")
+            for x, y in coords[1:]:
+                path_parts.append(f"L {x} {y}")
+            path_parts.append("Z")
+
+        # Interior rings (holes) - these create cutouts
+        for interior in poly.interiors:
+            coords = list(interior.coords)
+            if coords:
+                path_parts.append(f"M {coords[0][0]} {coords[0][1]}")
+                for x, y in coords[1:]:
+                    path_parts.append(f"L {x} {y}")
+                path_parts.append("Z")
+
+        return " ".join(path_parts)
+
+    # Handle MultiPolygon
+    if geom.geom_type == 'MultiPolygon':
+        paths = []
+        for poly in geom.geoms:
+            paths.append(single_polygon_to_path(poly))
+        return " ".join(paths)
+
+    # Handle single Polygon
+    return single_polygon_to_path(geom)
 
 
-def render_letter_svg(page, margin, outline_path_svg, regions, labels):
+def render_letter_svg(page, margin, outline_path_svg, regions, labels, voronoi_edges=None):
     # Page dimensions (US Letter size in points)
     w, h = (612, 792)
 
@@ -59,10 +82,10 @@ def render_letter_svg(page, margin, outline_path_svg, regions, labels):
     g = dwg.g(transform=transform)
     dwg.add(g)
 
-    # Render each region boundary without fill, just showing the divisions
+    # Render each region boundary (all edges including shared ones between regions)
     for r in regions:
         path_d = polygon_to_svg_path(r.poly)
-        # Show region boundaries with thin strokes, no fill
+        # Render each region's boundary
         g.add(dwg.path(d=path_d, fill="none", stroke="gray", stroke_width=1/scale))
 
     # Add the letter outline on top

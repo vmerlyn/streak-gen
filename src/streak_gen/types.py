@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, Point, LineString
 
 @dataclass(frozen=True)
 class Region:
@@ -18,3 +18,4 @@ class SegmentationResult:
     segmentation_poly: Polygon
     regions: list[Region]
     labels: list[Label]
+    voronoi_edges: list[LineString] = None  # Optional Voronoi cell boundaries
