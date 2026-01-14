@@ -93,8 +93,11 @@ def segment_letter_to_regions(letter: str, font_path: Path, segments: int, font_
             temp_regions.append({
                 'poly': clipped,
                 'seed_pt': seed_pt,
-                'centroid': centroid
+                'centroid': centroid,
+                'index': i  # Keep track of original index
             })
+
+    # Keep all regions - no merging
 
     # Sort regions spatially: top-to-bottom, then left-to-right
     # In SVG coordinates, y is negative at top, so sort by y ascending (most negative first)
@@ -139,38 +142,20 @@ def segment_word_to_regions(word: str, font_path: Path, segments: int, font_size
     Returns:
         SegmentationResult with regions distributed across the entire word
     """
-    # Get word outline
-    outline_d, word_poly = word_outline_svg_path(word, font_path, font_size)
+    # Get word outline and individual letter polygons
+    outline_d, word_poly, letter_polygons = word_outline_svg_path(word, font_path, font_size)
 
     # Apply inset to the word polygon (shrink it slightly)
+    # The buffer operation with negative value will automatically handle both:
+    # - Shrinking the exterior boundary
+    # - Expanding the holes (interior rings)
     if inset > 0:
-        # Use pyclipper to offset (inset) the polygon
-        pco = pyclipper.PyclipperOffset()
+        # Negative buffer shrinks exterior and expands holes
+        inset_poly = word_poly.buffer(-inset)
 
-        # Handle MultiPolygon (word with separate letters like 'i' with dot)
-        if word_poly.geom_type == 'MultiPolygon':
-            inset_polys = []
-            for poly in word_poly.geoms:
-                path = [(x, y) for x, y in poly.exterior.coords[:-1]]
-                pco.Clear()
-                pco.AddPath(path, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-                solution = pco.Execute(-inset)
-                if solution:
-                    inset_polys.append(Polygon(solution[0]))
-            if inset_polys:
-                from shapely.ops import unary_union
-                inset_poly = unary_union(inset_polys)
-            else:
-                inset_poly = word_poly
-        else:
-            # Single polygon
-            path = [(x, y) for x, y in word_poly.exterior.coords[:-1]]
-            pco.AddPath(path, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-            solution = pco.Execute(-inset)
-            if solution:
-                inset_poly = Polygon(solution[0])
-            else:
-                inset_poly = word_poly
+        # Clean up geometry
+        if not inset_poly.is_valid or inset_poly.is_empty:
+            inset_poly = word_poly.buffer(-inset * 0.5)  # Try with less aggressive inset
     else:
         inset_poly = word_poly
 
@@ -231,30 +216,56 @@ def segment_word_to_regions(word: str, font_path: Path, segments: int, font_size
         if clipped.is_valid and not clipped.is_empty and clipped.area > 0:
             # Store region with its centroid for sorting
             centroid = clipped.centroid
+
+            # Determine which letter this region belongs to
+            # by finding which letter polygon it overlaps most with
+            letter_idx = 0
+            max_overlap = 0
+            for idx, letter_poly in enumerate(letter_polygons):
+                overlap = clipped.intersection(letter_poly).area
+                if overlap > max_overlap:
+                    max_overlap = overlap
+                    letter_idx = idx
+
             temp_regions.append({
                 'poly': clipped,
                 'seed_pt': seed_pt,
-                'centroid': centroid
+                'centroid': centroid,
+                'letter_idx': letter_idx
             })
 
-    # Sort regions spatially: top-to-bottom, then left-to-right
-    # In SVG coordinates, y is negative at top, so sort by y ascending (most negative first)
-    temp_regions.sort(key=lambda r: (r['centroid'].y, r['centroid'].x))
+    # Keep all regions - no merging
 
-    # Now assign IDs based on sorted order
+    # Group regions by letter
+    from collections import defaultdict
+    regions_by_letter = defaultdict(list)
+    for region_data in temp_regions:
+        regions_by_letter[region_data['letter_idx']].append(region_data)
+
+    # Sort regions within each letter spatially: top-to-bottom, then left-to-right
+    # In SVG coordinates, y is negative at top, so sort by y ascending (most negative first)
+    for letter_idx in regions_by_letter:
+        regions_by_letter[letter_idx].sort(key=lambda r: (r['centroid'].y, r['centroid'].x))
+
+    # Now assign IDs letter-by-letter in order
     regions = []
     labels = []
-    for i, region_data in enumerate(temp_regions):
-        clipped = region_data['poly']
-        seed_pt = region_data['seed_pt']
+    region_id = 1
 
-        regions.append(Region(id=i + 1, poly=clipped))
+    for letter_idx in sorted(regions_by_letter.keys()):
+        for region_data in regions_by_letter[letter_idx]:
+            clipped = region_data['poly']
+            seed_pt = region_data['seed_pt']
 
-        # Place label at representative point inside the clipped region
-        label_pt = Point(seed_pt[0], seed_pt[1])
-        if not clipped.contains(label_pt):
-            label_pt = clipped.representative_point()
-        labels.append(Label(id=i + 1, point=label_pt, text=str(i + 1)))
+            regions.append(Region(id=region_id, poly=clipped))
+
+            # Place label at representative point inside the clipped region
+            label_pt = Point(seed_pt[0], seed_pt[1])
+            if not clipped.contains(label_pt):
+                label_pt = clipped.representative_point()
+            labels.append(Label(id=region_id, point=label_pt, text=str(region_id)))
+
+            region_id += 1
 
     # Return the segmentation result
     return SegmentationResult(

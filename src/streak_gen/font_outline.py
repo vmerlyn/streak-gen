@@ -121,7 +121,8 @@ def word_outline_svg_path(word: str, font_path: Path, font_size: float):
     """Get the outline for an entire word with proper letter spacing.
 
     Returns:
-        (svg_path_d, combined_polygon): SVG path string and Shapely polygon for the word
+        (svg_path_d, combined_polygon, letter_polygons): SVG path string, Shapely polygon for the word,
+        and list of individual letter polygons
     """
     tf = skia.Typeface.MakeFromFile(str(font_path))
     font = skia.Font(tf, font_size)
@@ -190,4 +191,4 @@ def word_outline_svg_path(word: str, font_path: Path, font_size: float):
     # Combine all SVG paths
     svg_path_d = " ".join(svg_paths)
 
-    return svg_path_d, combined_poly
+    return svg_path_d, combined_poly, polygons

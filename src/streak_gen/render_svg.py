@@ -82,20 +82,52 @@ def render_letter_svg(page, margin, outline_path_svg, regions, labels, voronoi_e
     g = dwg.g(transform=transform)
     dwg.add(g)
 
-    # Render each region boundary (all edges including shared ones between regions)
+    # Render each region boundary (only exterior, not interior holes)
     for r in regions:
-        path_d = polygon_to_svg_path(r.poly)
-        # Render each region's boundary
-        g.add(dwg.path(d=path_d, fill="none", stroke="gray", stroke_width=1/scale))
+        # Handle both Polygon and MultiPolygon
+        if r.poly.geom_type == 'MultiPolygon':
+            # For MultiPolygon, render exterior of each polygon
+            for poly in r.poly.geoms:
+                coords = list(poly.exterior.coords)
+                if coords:
+                    path_parts = [f"M {coords[0][0]} {coords[0][1]}"]
+                    for x, y in coords[1:]:
+                        path_parts.append(f"L {x} {y}")
+                    path_parts.append("Z")
+                    path_d = " ".join(path_parts)
+                    g.add(dwg.path(d=path_d, fill="none", stroke="gray", stroke_width=1/scale))
+        else:
+            # Single Polygon - only render exterior ring, not holes
+            coords = list(r.poly.exterior.coords)
+            if coords:
+                path_parts = [f"M {coords[0][0]} {coords[0][1]}"]
+                for x, y in coords[1:]:
+                    path_parts.append(f"L {x} {y}")
+                path_parts.append("Z")
+                path_d = " ".join(path_parts)
+                g.add(dwg.path(d=path_d, fill="none", stroke="gray", stroke_width=1/scale))
 
     # Add the letter outline on top
     g.add(dwg.path(d=outline_path_svg, fill="none", stroke="black", stroke_width=4/scale))
 
-    # Add labels
+    # Add labels LAST with white background so they're always visible
     for lab in labels:
+        # Add white background rectangle for visibility
+        text_width = len(lab.text) * 8  # Approximate width
+        text_height = 14
+        g.add(dwg.rect(
+            insert=(lab.point.x - text_width/2, lab.point.y - text_height/2),
+            size=(text_width, text_height),
+            fill="white",
+            opacity=0.8
+        ))
+
+        # Add label text on top of background
         g.add(dwg.text(lab.text, insert=(lab.point.x, lab.point.y),
-                      font_size=f"{12/scale}px",
+                      font_size="14px",
                       text_anchor="middle",
-                      dominant_baseline="middle"))
+                      dominant_baseline="middle",
+                      fill="black",
+                      font_weight="bold"))
 
     return dwg.tostring()
