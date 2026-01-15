@@ -3,6 +3,7 @@ import typer
 from pathlib import Path
 from .segmenter import segment_letter_to_regions, segment_word_to_regions
 from .render_svg import render_letter_svg
+from .layout_year import layout_year
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -68,6 +69,26 @@ def gen_word(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(svg_text, encoding="utf-8")
     typer.echo(f"Wrote: {out}")
+
+
+@app.command("gen-calendar")
+def gen_calendar(
+    font: Path = typer.Option(..., "--font", "-f", exists=True),
+    out: Path = typer.Option("calendar.svg", "--out", "-o"),
+):
+    """Generate year calendar with all 12 months. Only adjustable option is font."""
+    layout_year(font, out)
+    typer.echo(f"Calendar generated: {out}")
+
+
+@app.command("gen-year")
+def gen_year(
+    font: Path = typer.Option(..., "--font", "-f", exists=True),
+    out: Path = typer.Option("out/year_calendar.svg", "--out", "-o"),
+):
+    """Generate all 12 months on a single letter-sized page."""
+    layout_year(font, out)
+    typer.echo(f"Year calendar generated: {out}")
 
 
 if __name__ == "__main__":

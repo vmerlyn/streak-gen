@@ -51,3 +51,8 @@ echo "✓ December (31 days)"
 echo ""
 echo "✓ All 12 months generated in $OUT_DIR"
 echo "Total files: $(ls -1 "$OUT_DIR" | wc -l)"
+
+echo ""
+echo "Generating year calendar (all 12 months on one page)..."
+streak-gen gen-year --font "$FONT" --out "out/year_calendar.svg"
+echo "✓ Year calendar generated: out/year_calendar.svg"
